@@ -4,6 +4,34 @@ use std::error;
 
 use {TlsAcceptorBuilder, TlsConnectorBuilder};
 
+// TODO: Move bindings in nnsdk-rs
+mod Connection {
+    // Estimate through SDK binary usage of the fields. Might be 0x28?
+    pub struct Connection {
+        _x: [u8;0x24],
+    }
+
+    impl Connection {
+        pub fn new() -> Self {
+            Self {
+                _x: [0;0x24],
+            }
+        }
+    }
+
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10ConnectionC1Ev"]
+        pub fn Connection(this: *const u8);
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection6CreateEPNS0_7ContextE"]
+        pub fn Create(this: *const u8, context: *const u8) -> u32;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection7DestroyEv"]
+        pub fn Destroy(this: *const u8) -> u32;
+    }
+}
 
 pub struct Error(io::Error);
 
@@ -168,6 +196,9 @@ impl<S: io::Read + io::Write> TlsStream<S> {
     }
 
     pub fn shutdown(&mut self) -> io::Result<()> {
+        // nn::ssl::Connection::Destroy()
+        // Should we take care of this for the user directly in the dependencies?
+        // unsafe { nnsdk::ssl::Finalize(); }
         unimplemented!()
     }
 }
