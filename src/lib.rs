@@ -117,7 +117,10 @@ mod imp;
 #[cfg(target_os = "windows")]
 #[path = "imp/schannel.rs"]
 mod imp;
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "ios")))]
+#[cfg(target_os = "switch")]
+#[path = "imp/nnsdk.rs"]
+mod imp;
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "switch", target_os = "ios")))]
 #[path = "imp/openssl.rs"]
 mod imp;
 
@@ -132,7 +135,7 @@ pub struct Error(imp::Error);
 
 impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        error::Error::source(&self.0)
+        unimplemented!()
     }
 }
 
