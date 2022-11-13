@@ -1,12 +1,20 @@
+extern crate libc;
+extern crate nnsdk;
+
 use std::io;
 use std::fmt;
 use std::error;
+
+use std::marker::PhantomData;
+
+use self::nnsdk::nn;
 
 use {TlsAcceptorBuilder, TlsConnectorBuilder};
 
 // TODO: Move bindings in nnsdk-rs
 mod Connection {
     // Estimate through SDK binary usage of the fields. Might be 0x28?
+    #[repr(C)]
     pub struct Connection {
         _x: [u8;0x24],
     }
@@ -21,15 +29,31 @@ mod Connection {
 
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10ConnectionC1Ev"]
-        pub fn Connection(this: *const u8);
+        pub fn Connection(this: *mut Connection);
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection6CreateEPNS0_7ContextE"]
-        pub fn Create(this: *const u8, context: *const u8) -> u32;
+        pub fn Create(this: *mut Connection, context: *const u8) -> u32;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection19SetSocketDescriptorEi"]
+        pub fn SetSocketDescriptor(this: *mut Connection, socket_desc: u32) -> u32;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection4ReadEPcPij"]
+        pub fn Read(this: *const Connection, out_buf: *mut u8, buf_len: usize) -> usize;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection5WriteEPKcj"]
+        pub fn Write(this: *const Connection, buf: *const u8, buf_len: usize) -> usize;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection17FlushSessionCacheEv"]
+        pub fn FlushSessionCache(this: *const Connection) -> u32;
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection7DestroyEv"]
-        pub fn Destroy(this: *const u8) -> u32;
+        pub fn Destroy(this: *const Connection) -> u32;
     }
 }
 
@@ -144,6 +168,7 @@ impl TlsConnector {
     where
         S: io::Read + io::Write,
     {
+        // The place where the TCP socket needs to be opened (use the domain for the address), connected then provided to the SSL library
         unimplemented!()
     }
 }
@@ -160,11 +185,28 @@ impl TlsAcceptor {
     where
         S: io::Read + io::Write,
     {
+        // TODO: Make sure nn::ssl::Initialize has been called before any of this
+        // TODO: Prepare a nn::ssl::Context
+        let mut connection = Box::new(Connection::Connection::new());
+        // Initialize the class before doing anything
+        unsafe { Connection::Connection(connection.as_mut()) };
+
+        // TODO: Create the connection by providing it the context
+        // let result = unsafe { Connection::Create(connection.as_mut(), context idk) };
+
+        // TODO: Protocol 6 is TCP. Make constants in nnsdk-rs to facilitate. Same goes for the libc values.
+        let tcp_socket = unsafe { nn::socket::Socket(libc::AF_INET, libc::SOCK_STREAM, 6) };
+        // TODO: Connect the socket to the domain
+        // Assign the socket to the Connection. After doing so, you musn't use it again or even free it.
+        let result = unsafe { Connection::SetSocketDescriptor(connection.as_mut(), tcp_socket as _) };
         unimplemented!()
     }
 }
 
-pub struct TlsStream<S>(S);
+pub struct TlsStream<S> {
+    connection: Box<Connection::Connection>,
+    _m: PhantomData<S>,
+}
 
 impl<S: fmt::Debug> fmt::Debug for TlsStream<S> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
@@ -174,11 +216,11 @@ impl<S: fmt::Debug> fmt::Debug for TlsStream<S> {
 
 impl<S> TlsStream<S> {
     pub fn get_ref(&self) -> &S {
-        unimplemented!()
+        unsafe { & *(self.connection.as_ref() as *const Connection::Connection as *const S) }
     }
 
     pub fn get_mut(&mut self) -> &mut S {
-        unimplemented!()
+        unsafe { &mut *(self.connection.as_mut() as *mut Connection::Connection as *mut S) }
     }
 }
 
@@ -196,25 +238,30 @@ impl<S: io::Read + io::Write> TlsStream<S> {
     }
 
     pub fn shutdown(&mut self) -> io::Result<()> {
-        // nn::ssl::Connection::Destroy()
+        let result = unsafe { Connection::Destroy(self.connection.as_ref()) };
         // Should we take care of this for the user directly in the dependencies?
         // unsafe { nnsdk::ssl::Finalize(); }
-        unimplemented!()
+        Ok(())
     }
 }
 
 impl<S: io::Read + io::Write> io::Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        unimplemented!()
+        let result = unsafe { Connection::Read(self.connection.as_ref(), buf.as_mut_ptr(), buf.len()) };
+        // TODO: If result is < 0, we have an error, deal with that
+        Ok(result)
     }
 }
 
 impl<S: io::Read + io::Write> io::Write for TlsStream<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        unimplemented!()
+        let result = unsafe { Connection::Write(self.connection.as_ref(), buf.as_ptr(), buf.len()) };
+        // TODO: If result is < 0, we have an error, deal with that
+        Ok(result)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        unimplemented!()
+        let result = unsafe { Connection::FlushSessionCache(self.connection.as_ref()) };
+        Ok(())
     }
 }
