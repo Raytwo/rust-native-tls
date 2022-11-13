@@ -161,7 +161,7 @@ pub struct TlsConnector;
 
 impl TlsConnector {
     pub fn new(builder: &TlsConnectorBuilder) -> Result<TlsConnector, Error> {
-        unimplemented!()
+        Ok(TlsConnector)
     }
 
     pub fn connect<S>(&self, domain: &str, stream: S) -> Result<TlsStream<S>, HandshakeError<S>>
@@ -169,22 +169,7 @@ impl TlsConnector {
         S: io::Read + io::Write,
     {
         // The place where the TCP socket needs to be opened (use the domain for the address), connected then provided to the SSL library
-        unimplemented!()
-    }
-}
-
-#[derive(Clone)]
-pub struct TlsAcceptor;
-
-impl TlsAcceptor {
-    pub fn new(builder: &TlsAcceptorBuilder) -> Result<TlsAcceptor, Error> {
-        unimplemented!()
-    }
-
-    pub fn accept<S>(&self, stream: S) -> Result<TlsStream<S>, HandshakeError<S>>
-    where
-        S: io::Read + io::Write,
-    {
+        
         // TODO: Make sure nn::ssl::Initialize has been called before any of this
         // TODO: Prepare a nn::ssl::Context
         let mut connection = Box::new(Connection::Connection::new());
@@ -196,9 +181,29 @@ impl TlsAcceptor {
 
         // TODO: Protocol 6 is TCP. Make constants in nnsdk-rs to facilitate. Same goes for the libc values.
         let tcp_socket = unsafe { nn::socket::Socket(libc::AF_INET, libc::SOCK_STREAM, 6) };
+        
         // TODO: Connect the socket to the domain
+
         // Assign the socket to the Connection. After doing so, you musn't use it again or even free it.
         let result = unsafe { Connection::SetSocketDescriptor(connection.as_mut(), tcp_socket as _) };
+
+        unimplemented!()
+    }
+}
+
+#[derive(Clone)]
+pub struct TlsAcceptor;
+
+impl TlsAcceptor {
+    pub fn new(builder: &TlsAcceptorBuilder) -> Result<TlsAcceptor, Error> {
+        // Since the Switch cannot do server-side SSL, we do not implement this
+        unimplemented!()
+    }
+
+    pub fn accept<S>(&self, stream: S) -> Result<TlsStream<S>, HandshakeError<S>>
+    where
+        S: io::Read + io::Write,
+    {
         unimplemented!()
     }
 }
