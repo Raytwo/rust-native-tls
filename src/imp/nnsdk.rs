@@ -11,6 +11,38 @@ use self::nnsdk::nn;
 
 use {TlsAcceptorBuilder, TlsConnectorBuilder};
 
+mod Context {
+    #[repr(C)]
+    pub enum SslVersion {
+        Auto = 0x1,
+        Tls10 = 0x8,
+        Tls11 = 0x10,
+        Tls12 = 0x20,
+    }
+
+    // Estimate through SDK binary usage of the fields. Might be 0x28?
+    #[repr(C)]
+    pub struct Context {
+        _x: u64,
+    }
+
+    impl Context {
+        pub fn new() -> Self {
+            Self {
+                _x: 0,
+            }
+        }
+    }
+
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl7ContextC1Ev"]
+        pub fn Context(this: *mut Context);
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl7Context6CreateENS1_10SslVersionE"]
+        pub fn Create(this: *mut Context, version: SslVersion) -> i32;
+    }
+}
 // TODO: Move bindings in nnsdk-rs
 mod Connection {
     // Estimate through SDK binary usage of the fields. Might be 0x28?
@@ -40,12 +72,20 @@ mod Connection {
         pub fn SetSocketDescriptor(this: *mut Connection, socket_desc: u32) -> u32;
     }
     extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection11DoHandshakeEv"]
+        pub fn DoHandshake(this: *mut Connection) -> u32;
+    }
+    extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection4ReadEPcPij"]
         pub fn Read(this: *const Connection, out_buf: *mut u8, buf_len: usize) -> usize;
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection5WriteEPKcj"]
         pub fn Write(this: *const Connection, buf: *const u8, buf_len: usize) -> usize;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection7PendingEv"]
+        pub fn Pending(this: *const Connection) -> usize;
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection17FlushSessionCacheEv"]
@@ -183,11 +223,21 @@ impl TlsConnector {
         let tcp_socket = unsafe { nn::socket::Socket(libc::AF_INET, libc::SOCK_STREAM, 6) };
         
         // TODO: Connect the socket to the domain
+        // let result = unsafe { nn::socket::Connect(tcp_socket, libc::AF_INET, libc::SOCK_STREAM, 6) };
 
         // Assign the socket to the Connection. After doing so, you musn't use it again or even free it.
         let result = unsafe { Connection::SetSocketDescriptor(connection.as_mut(), tcp_socket as _) };
 
-        unimplemented!()
+        match unsafe { Connection::DoHandshake(connection.as_mut()) } {
+            0 => {
+                Ok(TlsStream {
+                    connection,
+                    _m: PhantomData,
+                })
+            }
+            _ => Err(HandshakeError::Failure(Error(io::Error::new(io::ErrorKind::Other, "idk"))))
+        }
+
     }
 }
 
@@ -204,6 +254,7 @@ impl TlsAcceptor {
     where
         S: io::Read + io::Write,
     {
+        // Since the Switch cannot do server-side SSL, we do not implement this
         unimplemented!()
     }
 }
@@ -231,7 +282,9 @@ impl<S> TlsStream<S> {
 
 impl<S: io::Read + io::Write> TlsStream<S> {
     pub fn buffered_read_size(&self) -> Result<usize, Error> {
-        unimplemented!()
+        // Peek how many bytes are in the buffer
+        let size = unsafe { Connection::Pending(self.connection.as_ref()) };
+        Ok(size)
     }
 
     pub fn peer_certificate(&self) -> Result<Option<Certificate>, Error> {
@@ -239,7 +292,8 @@ impl<S: io::Read + io::Write> TlsStream<S> {
     }
 
     pub fn tls_server_end_point(&self) -> Result<Option<Vec<u8>>, Error> {
-        unimplemented!()
+        // Since the Switch cannot do server-side SSL, we do not implement this
+        Ok(None)
     }
 
     pub fn shutdown(&mut self) -> io::Result<()> {
