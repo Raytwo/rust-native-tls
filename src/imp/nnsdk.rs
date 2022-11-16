@@ -111,7 +111,7 @@ mod Connection {
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection4ReadEPcPij"]
-        pub fn Read(this: *const Connection, out_buf: *mut u8, buf_len: usize) -> usize;
+        pub fn Read(this: *const Connection, out_buf: *mut u8, buf_len: usize) -> i32;
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection5WriteEPKcj"]
@@ -359,7 +359,7 @@ impl TlsConnector {
             println!("TlsConnector::connect: Connection successfully performed Handshake");
                 Ok(TlsStream {
                     connection,
-                    _m: PhantomData,
+                    stream: S,
                 })
             }
             _ => {
@@ -393,7 +393,7 @@ impl TlsAcceptor {
 
 pub struct TlsStream<S> {
     connection: Box<Connection::Connection>,
-    _m: PhantomData<S>,
+    stream: S,
 }
 
 impl<S: fmt::Debug> fmt::Debug for TlsStream<S> {
@@ -404,10 +404,12 @@ impl<S: fmt::Debug> fmt::Debug for TlsStream<S> {
 
 impl<S> TlsStream<S> {
     pub fn get_ref(&self) -> &S {
+        println!("TlsStream::get_ref");
         unsafe { & *(self.connection.as_ref() as *const Connection::Connection as *const S) }
     }
 
     pub fn get_mut(&mut self) -> &mut S {
+        panic!("TlsStream::get_mut");
         unsafe { &mut *(self.connection.as_mut() as *mut Connection::Connection as *mut S) }
     }
 }
@@ -439,9 +441,14 @@ impl<S: io::Read + io::Write> TlsStream<S> {
 
 impl<S: io::Read + io::Write> io::Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        panic!("Buffer length: {:#x}", buf.len());
         let result = unsafe { Connection::Read(self.connection.as_ref(), buf.as_mut_ptr(), buf.len()) };
         // TODO: If result is < 0, we have an error, deal with that
-        Ok(result)
+        if result == -1 {
+            panic!("TlsStream::read: Connection::Read returned the following result: {}", unsafe { Socket::GetLastError() })
+        }
+
+        Ok(result as _)
     }
 }
 
