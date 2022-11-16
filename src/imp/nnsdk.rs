@@ -20,7 +20,7 @@ mod Context {
         Tls12 = 0x20,
     }
 
-    // Estimate through SDK binary usage of the fields. Might be 0x28?
+    // Estimate through SDK binary usage of the fields
     #[repr(C)]
     pub struct Context {
         _x: u64,
@@ -41,6 +41,15 @@ mod Context {
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl7Context6CreateENS1_10SslVersionE"]
         pub fn Create(this: *mut Context, version: SslVersion) -> i32;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl7Context15ImportClientPkiEPmPKcS4_jj"]
+        pub fn ImportClientPki(this: *mut Context, out_store_id: &mut u64, p12_buf: *const u8, password_buf: *const u8, p12_buf_len: u32, password_buf_len: u32) -> i32;
+    }
+    
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl7Context9ImportCrlEPmPKcj"]
+        pub fn ImportCrl(this: *mut Context, out_store_id: &mut u64, crl_der_buf: *const u8, crl_der_buf_len: u32) -> i32;
     }
 }
 // TODO: Move bindings in nnsdk-rs
@@ -127,11 +136,11 @@ impl From<io::Error> for Error {
 pub struct Identity;
 
 impl Identity {
-    pub fn from_pkcs12(buf: &[u8], pass: &str) -> Result<Identity, Error> {
-        unimplemented!()
+    pub fn from_pkcs8(pem: &[u8], key: &[u8]) -> Result<Identity, Error> {
+        panic!("Not implemented on Nintendo Switch");
     }
 
-    pub fn from_pkcs8(pem: &[u8], key: &[u8]) -> Result<Identity, Error> {
+    pub fn from_pkcs12(buf: &[u8], pass: &str) -> Result<Identity, Error> {
         unimplemented!()
     }
 }
@@ -142,12 +151,11 @@ pub struct Certificate;
 impl Certificate {
     pub fn from_der(buf: &[u8]) -> Result<Certificate, Error> {
         unimplemented!()
-
     }
 
     pub fn from_pem(buf: &[u8]) -> Result<Certificate, Error> {
-        unimplemented!()
-
+        // Since the Switch cannot do server-side SSL, we do not implement this
+        panic!("Not implemented on Nintendo Switch");
     }
 
     pub fn to_der(&self) -> Result<Vec<u8>, Error> {
@@ -211,31 +219,56 @@ impl TlsConnector {
         // The place where the TCP socket needs to be opened (use the domain for the address), connected then provided to the SSL library
         
         // TODO: Make sure nn::ssl::Initialize has been called before any of this
-        // TODO: Prepare a nn::ssl::Context
-        let mut connection = Box::new(Connection::Connection::new());
-        // Initialize the class before doing anything
-        unsafe { Connection::Connection(connection.as_mut()) };
 
-        // TODO: Create the connection by providing it the context
-        // let result = unsafe { Connection::Create(connection.as_mut(), context idk) };
-
+        //-----------------------------------------------
+        // SOCKET
+        //-----------------------------------------------
         // TODO: Protocol 6 is TCP. Make constants in nnsdk-rs to facilitate. Same goes for the libc values.
         let tcp_socket = unsafe { nn::socket::Socket(libc::AF_INET, libc::SOCK_STREAM, 6) };
         
         // TODO: Connect the socket to the domain
         // let result = unsafe { nn::socket::Connect(tcp_socket, libc::AF_INET, libc::SOCK_STREAM, 6) };
 
+        println!("TlsConnector::connect: Successfully connected the socket");
+
+        //-----------------------------------------------
+        // CONTEXT
+        //-----------------------------------------------
+        // TODO: Prepare a nn::ssl::Context
+        let mut context = Box::new(Context::Context::new());
+        // Initialize the class before doing anything
+        unsafe { Context::Context(context.as_mut()) };
+        let result = unsafe { Connection::Create(context.as_mut(), Context::SslVersion::Auto) };
+
+        println!("TlsConnector::connect: Successfully created the Context");
+
+        //-----------------------------------------------
+        // CONNECTION
+        //-----------------------------------------------
+        let mut connection = Box::new(Connection::Connection::new());
+        // Initialize the class before doing anything
+        unsafe { Connection::Connection(connection.as_mut()) };
+
+        // TODO: Create the connection by providing it the context
+        let result = unsafe { Connection::Create(connection.as_mut(), context.as_ref()) };
+
+        println!("TlsConnector::connect: Successfully created the Connection");
+
         // Assign the socket to the Connection. After doing so, you musn't use it again or even free it.
         let result = unsafe { Connection::SetSocketDescriptor(connection.as_mut(), tcp_socket as _) };
 
+        println!("TlsConnector::connect: Assigned the socket to the Connection");
+
+
         match unsafe { Connection::DoHandshake(connection.as_mut()) } {
             0 => {
+            println!("TlsConnector::connect: Connection successfully performed Handshake");
                 Ok(TlsStream {
                     connection,
                     _m: PhantomData,
                 })
             }
-            _ => Err(HandshakeError::Failure(Error(io::Error::new(io::ErrorKind::Other, "idk"))))
+            _ => Err(HandshakeError::Failure(Error(io::Error::new(io::ErrorKind::Other, "TlsConnector::connect: Handshake did not end successfully"))))
         }
 
     }
@@ -247,7 +280,8 @@ pub struct TlsAcceptor;
 impl TlsAcceptor {
     pub fn new(builder: &TlsAcceptorBuilder) -> Result<TlsAcceptor, Error> {
         // Since the Switch cannot do server-side SSL, we do not implement this
-        unimplemented!()
+        panic!("Not implemented on Nintendo Switch");
+
     }
 
     pub fn accept<S>(&self, stream: S) -> Result<TlsStream<S>, HandshakeError<S>>
@@ -255,7 +289,8 @@ impl TlsAcceptor {
         S: io::Read + io::Write,
     {
         // Since the Switch cannot do server-side SSL, we do not implement this
-        unimplemented!()
+        panic!("Not implemented on Nintendo Switch");
+
     }
 }
 
