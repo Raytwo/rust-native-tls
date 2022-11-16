@@ -359,7 +359,7 @@ impl TlsConnector {
             println!("TlsConnector::connect: Connection successfully performed Handshake");
                 Ok(TlsStream {
                     connection,
-                    stream: S,
+                    _m: PhantomData,
                 })
             }
             _ => {
@@ -393,7 +393,7 @@ impl TlsAcceptor {
 
 pub struct TlsStream<S> {
     connection: Box<Connection::Connection>,
-    stream: S,
+    _m: PhantomData<S>,
 }
 
 impl<S: fmt::Debug> fmt::Debug for TlsStream<S> {
