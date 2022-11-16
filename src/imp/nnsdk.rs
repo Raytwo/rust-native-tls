@@ -4,12 +4,32 @@ extern crate nnsdk;
 use std::io;
 use std::fmt;
 use std::error;
-
 use std::marker::PhantomData;
+use std::net::{SocketAddr, ToSocketAddrs, IpAddr };
 
 use self::nnsdk::nn;
 
 use {TlsAcceptorBuilder, TlsConnectorBuilder};
+
+mod Socket {
+    #[repr(C)]
+    pub struct SockAddrIn {
+        pub sin_len: u8,
+        pub sin_family: u8,
+        pub sin_port: u16,
+        pub sin_addr: [u8;4],
+        pub padding: u64,
+    }
+
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn6socket7ConnectEiPKNS0_8SockAddrEj"]
+        pub fn Connect(socket: i32, sockaddrin: *const SockAddrIn, sockaddr_len: u32) -> i32;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn6socket12GetLastErrorEv"]
+        pub fn GetLastError() -> u32;
+    }
+}
 
 mod Context {
     #[repr(C)]
@@ -52,6 +72,7 @@ mod Context {
         pub fn ImportCrl(this: *mut Context, out_store_id: &mut u64, crl_der_buf: *const u8, crl_der_buf_len: u32) -> i32;
     }
 }
+
 // TODO: Move bindings in nnsdk-rs
 mod Connection {
     // Estimate through SDK binary usage of the fields. Might be 0x28?
@@ -74,7 +95,7 @@ mod Connection {
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection6CreateEPNS0_7ContextE"]
-        pub fn Create(this: *mut Connection, context: *const u8) -> u32;
+        pub fn Create(this: *mut Connection, context: *const super::Context::Context) -> u32;
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection19SetSocketDescriptorEi"]
@@ -225,11 +246,36 @@ impl TlsConnector {
         //-----------------------------------------------
         // TODO: Protocol 6 is TCP. Make constants in nnsdk-rs to facilitate. Same goes for the libc values.
         let tcp_socket = unsafe { nn::socket::Socket(libc::AF_INET, libc::SOCK_STREAM, 6) };
+
+        if tcp_socket == -1 {
+            panic!("TlsConnector::connect: nn::socket::Socket returned the following result: {}", unsafe { Socket::GetLastError() })
+        }
         
         // TODO: Connect the socket to the domain
-        // let result = unsafe { nn::socket::Connect(tcp_socket, libc::AF_INET, libc::SOCK_STREAM, 6) };
+        let mut host = format!("{}:443", domain).to_socket_addrs().unwrap();
+        let sock_address = host.next().unwrap();
 
-        println!("TlsConnector::connect: Successfully connected the socket");
+        let ip = match sock_address.ip() {
+            IpAddr::V4(addr) => addr,
+            _ => panic!("Not a IpAddrV4"),
+        };
+
+        let sock_addr = Socket::SockAddrIn {
+            sin_len: 16,
+            sin_family: 2, // AF_INET but the constant is a u32 so it doesn't fit
+            sin_port: 443u16.to_be(),
+            sin_addr: ip.octets(),
+            padding: 0,
+        };
+
+        // TODO: Rework the one in nnsdk-rs
+        let result = unsafe { Socket::Connect(tcp_socket, &sock_addr, 16) };
+
+        if result == 0 {
+            println!("TlsConnector::connect: Successfully connected the socket");
+        } else {
+            panic!("TlsConnector::connect: nn::socket::Connect returned the following result: {}", unsafe { Socket::GetLastError() })
+        }
 
         //-----------------------------------------------
         // CONTEXT
@@ -238,9 +284,9 @@ impl TlsConnector {
         let mut context = Box::new(Context::Context::new());
         // Initialize the class before doing anything
         unsafe { Context::Context(context.as_mut()) };
-        let result = unsafe { Connection::Create(context.as_mut(), Context::SslVersion::Auto) };
+        let result = unsafe { Context::Create(context.as_mut(), Context::SslVersion::Auto) };
 
-        println!("TlsConnector::connect: Successfully created the Context");
+        panic!("TlsConnector::connect: Successfully created the Context");
 
         //-----------------------------------------------
         // CONNECTION
@@ -252,7 +298,7 @@ impl TlsConnector {
         // TODO: Create the connection by providing it the context
         let result = unsafe { Connection::Create(connection.as_mut(), context.as_ref()) };
 
-        println!("TlsConnector::connect: Successfully created the Connection");
+        panic!("TlsConnector::connect: Successfully created the Connection");
 
         // Assign the socket to the Connection. After doing so, you musn't use it again or even free it.
         let result = unsafe { Connection::SetSocketDescriptor(connection.as_mut(), tcp_socket as _) };
