@@ -102,6 +102,10 @@ mod Connection {
         pub fn SetSocketDescriptor(this: *mut Connection, socket_desc: u32) -> u32;
     }
     extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection11SetHostNameEPKcj"]
+        pub fn SetHostName(this: *mut Connection, host_name: *const u8, name_len: u32) -> i32;
+    }
+    extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection11DoHandshakeEv"]
         pub fn DoHandshake(this: *mut Connection) -> u32;
     }
@@ -119,7 +123,15 @@ mod Connection {
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection17FlushSessionCacheEv"]
-        pub fn FlushSessionCache(this: *const Connection) -> u32;
+        pub fn FlushSessionCache(this: *mut Connection) -> u32;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection9SetOptionENS1_10OptionTypeEb"]
+        pub fn SetOption(this: *mut Connection, option: u32, enable: bool) -> u32;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection15SetVerifyOptionENS1_12VerifyOptionE"]
+        pub fn SetVerifyOption(this: *mut Connection, options: u32) -> u32;
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection7DestroyEv"]
@@ -240,6 +252,7 @@ impl TlsConnector {
         // The place where the TCP socket needs to be opened (use the domain for the address), connected then provided to the SSL library
         
         // TODO: Make sure nn::ssl::Initialize has been called before any of this
+        unsafe { nn::ssl::Initialize() };
 
         //-----------------------------------------------
         // SOCKET
@@ -272,7 +285,7 @@ impl TlsConnector {
         let result = unsafe { Socket::Connect(tcp_socket, &sock_addr, 16) };
 
         if result == 0 {
-            println!("TlsConnector::connect: Successfully connected the socket");
+            println!("TlsConnector::connect: Successfully connected the socket")
         } else {
             panic!("TlsConnector::connect: nn::socket::Connect returned the following result: {}", unsafe { Socket::GetLastError() })
         }
@@ -286,7 +299,11 @@ impl TlsConnector {
         unsafe { Context::Context(context.as_mut()) };
         let result = unsafe { Context::Create(context.as_mut(), Context::SslVersion::Auto) };
 
-        panic!("TlsConnector::connect: Successfully created the Context");
+        if result == 0 {
+            println!("TlsConnector::connect: Successfully created the Context")
+        } else {
+            panic!("TlsConnector::connect: nn::ssl::Context::Create returned the following result: {}", result)
+        }
 
         //-----------------------------------------------
         // CONNECTION
@@ -298,15 +315,46 @@ impl TlsConnector {
         // TODO: Create the connection by providing it the context
         let result = unsafe { Connection::Create(connection.as_mut(), context.as_ref()) };
 
-        panic!("TlsConnector::connect: Successfully created the Connection");
+        if result == 0 {
+            println!("TlsConnector::connect: Successfully created the Connection");
+        } else {
+            panic!("TlsConnector::connect: nn::ssl::Connection::Create returned the following result: {}", result)
+        }
 
         // Assign the socket to the Connection. After doing so, you musn't use it again or even free it.
         let result = unsafe { Connection::SetSocketDescriptor(connection.as_mut(), tcp_socket as _) };
 
-        println!("TlsConnector::connect: Assigned the socket to the Connection");
+        println!("TlsConnector::connect: Assigned the socket to the Connection: {}", result);
 
+        let result = unsafe { Connection::SetOption(connection.as_mut(), 2, true) };
 
-        match unsafe { Connection::DoHandshake(connection.as_mut()) } {
+        if result == 0 {
+            println!("TlsConnector::connect: Called SetOption successfully");
+        } else {
+            panic!("TlsConnector::connect: nn::ssl::Connection::SetOption returned the following result: {}", result)
+        }
+
+        let result = unsafe { Connection::SetVerifyOption(connection.as_mut(), 0) };
+
+        if result == 0 {
+            println!("TlsConnector::connect: Called SetVerifyOption successfully");
+        } else {
+            panic!("TlsConnector::connect: nn::ssl::Connection::SetVerifyOption returned the following result: {}", result)
+        }
+
+        const hostname: &[u8] = b"nintendo.com";
+
+        let result = unsafe { Connection::SetHostName(connection.as_mut(), hostname.as_ptr() as _, hostname.len() as _) };
+
+        if result == 0 {
+            println!("TlsConnector::connect: Called SetHostName successfully");
+        } else {
+            panic!("TlsConnector::connect: nn::ssl::Connection::SetHostName returned the following result: {}", result)
+        }
+
+        let result = unsafe { Connection::DoHandshake(connection.as_mut()) };
+
+        match result {
             0 => {
             println!("TlsConnector::connect: Connection successfully performed Handshake");
                 Ok(TlsStream {
@@ -314,7 +362,10 @@ impl TlsConnector {
                     _m: PhantomData,
                 })
             }
-            _ => Err(HandshakeError::Failure(Error(io::Error::new(io::ErrorKind::Other, "TlsConnector::connect: Handshake did not end successfully"))))
+            _ => {
+                panic!("TlsConnector::connect: Handshake failed with the following result: {}", result);   
+                Err(HandshakeError::Failure(Error(io::Error::new(io::ErrorKind::Other, "TlsConnector::connect: Handshake did not end successfully"))))
+            }
         }
 
     }
@@ -365,6 +416,7 @@ impl<S: io::Read + io::Write> TlsStream<S> {
     pub fn buffered_read_size(&self) -> Result<usize, Error> {
         // Peek how many bytes are in the buffer
         let size = unsafe { Connection::Pending(self.connection.as_ref()) };
+        panic!("TlsStream::buffered_read_size: Size pending: {:#x}", size);
         Ok(size)
     }
 
@@ -401,7 +453,7 @@ impl<S: io::Read + io::Write> io::Write for TlsStream<S> {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        let result = unsafe { Connection::FlushSessionCache(self.connection.as_ref()) };
+        let result = unsafe { Connection::FlushSessionCache(self.connection.as_mut()) };
         Ok(())
     }
 }
