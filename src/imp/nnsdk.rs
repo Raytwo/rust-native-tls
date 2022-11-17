@@ -372,7 +372,7 @@ impl TlsConnector {
             println!("TlsConnector::connect: Connection successfully performed Handshake");
                 Ok(TlsStream {
                     connection: connection.clone(),
-                    stream: bufstream::BufStream::with_capacities(0x50000, 0x50000, NnSslStream(connection)),
+                    stream: io::BufReader::with_capacity(0x50000, NnSslStream(connection)),
                     buffer: stream,
                 })
             }
@@ -444,7 +444,7 @@ impl io::Write for NnSslStream {
 
 pub struct TlsStream<S> {
     connection: Box<Connection::Connection>,
-    stream: bufstream::BufStream<NnSslStream>,
+    stream: io::BufReader<NnSslStream>,
     buffer: S,
 }
 
