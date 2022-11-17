@@ -77,6 +77,7 @@ mod Context {
 mod Connection {
     // Estimate through SDK binary usage of the fields. Might be 0x28?
     #[repr(C)]
+    #[derive(Clone, Copy)]
     pub struct Connection {
         _x: [u8;0x24],
     }
@@ -114,8 +115,16 @@ mod Connection {
         pub fn Read(this: *const Connection, out_buf: *mut u8, buf_len: usize) -> i32;
     }
     extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection4ReadEPcPij"]
+        pub fn Read1(this: *const Connection, out_buf: *mut u8, out_size_read: *mut i32, buf_len: usize) -> i32;
+    }
+    extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection5WriteEPKcj"]
         pub fn Write(this: *const Connection, buf: *const u8, buf_len: usize) -> i32;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection5WriteEPKcPij"]
+        pub fn Write1(this: *const Connection, buf: *const u8, out_size_write: *mut i32, buf_len: usize) -> i32;
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection7PendingEv"]
@@ -132,6 +141,10 @@ mod Connection {
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection15SetVerifyOptionENS1_12VerifyOptionE"]
         pub fn SetVerifyOption(this: *mut Connection, options: u32) -> u32;
+    }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl10Connection12GetLastErrorEPNS_6ResultE"]
+        pub fn GetLastError(this: *const Connection, out_result: *mut u32) -> u32;
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl10Connection7DestroyEv"]
@@ -342,15 +355,15 @@ impl TlsConnector {
             panic!("TlsConnector::connect: nn::ssl::Connection::SetVerifyOption returned the following result: {}", result)
         }
 
-        const hostname: &[u8] = b"nintendo.com";
+        // const hostname: &[u8] = b"nintendo.com";
 
-        let result = unsafe { Connection::SetHostName(connection.as_mut(), hostname.as_ptr() as _, hostname.len() as _) };
+        // let result = unsafe { Connection::SetHostName(connection.as_mut(), hostname.as_ptr() as _, hostname.len() as _) };
 
-        if result == 0 {
-            println!("TlsConnector::connect: Called SetHostName successfully");
-        } else {
-            panic!("TlsConnector::connect: nn::ssl::Connection::SetHostName returned the following result: {}", result)
-        }
+        // if result == 0 {
+        //     println!("TlsConnector::connect: Called SetHostName successfully");
+        // } else {
+        //     panic!("TlsConnector::connect: nn::ssl::Connection::SetHostName returned the following result: {}", result)
+        // }
 
         let result = unsafe { Connection::DoHandshake(connection.as_mut()) };
 
@@ -358,8 +371,9 @@ impl TlsConnector {
             0 => {
             println!("TlsConnector::connect: Connection successfully performed Handshake");
                 Ok(TlsStream {
-                    connection,
-                    buffer: io::Cursor::new(stream),
+                    connection: connection.clone(),
+                    stream: bufstream::BufStream::with_capacities(0x50000, 0x50000, NnSslStream(connection)),
+                    buffer: stream,
                 })
             }
             _ => {
@@ -391,9 +405,47 @@ impl TlsAcceptor {
     }
 }
 
+pub struct NnSslStream(Box<Connection::Connection>);
+
+impl io::Read for NnSslStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::result::Result<usize, std::io::Error> {
+        let mut read_count = 0;
+        let result = unsafe { Connection::Read1(self.0.as_ref(), buf.as_mut_ptr(), &mut read_count, buf.len() as _) };
+        // TODO: If result is < 0, we have an error, deal with that
+        if result == -1 {
+            let mut result = 0;
+            unsafe { Connection::GetLastError(self.0.as_ref(), &mut result) };
+            panic!("TlsStream::read: Connection::Read returned the following result: {}", result)
+        }
+
+        Ok(read_count as _)
+    }
+}
+
+impl io::Write for NnSslStream {
+    fn write(&mut self, buf: &[u8]) -> std::result::Result<usize, std::io::Error> {
+        let mut write_count = 0;
+        let result = unsafe { Connection::Write1(self.0.as_ref(), buf.as_ptr(), &mut write_count, buf.len()) };
+
+        if result == -1 {
+            let mut result = 0;
+            unsafe { Connection::GetLastError(self.0.as_ref(), &mut result) };
+            panic!("TlsStream::write: Connection::Write returned the following result: {}", result)
+        }
+
+        Ok(write_count as _)
+    }
+
+    fn flush(&mut self) -> std::result::Result<(), std::io::Error> {
+        let result = unsafe { Connection::FlushSessionCache(self.0.as_mut()) };
+        Ok(())
+    }
+}
+
 pub struct TlsStream<S> {
     connection: Box<Connection::Connection>,
-    buffer: io::Cursor<S>,
+    stream: bufstream::BufStream<NnSslStream>,
+    buffer: S,
 }
 
 impl<S: fmt::Debug> fmt::Debug for TlsStream<S> {
@@ -404,14 +456,11 @@ impl<S: fmt::Debug> fmt::Debug for TlsStream<S> {
 
 impl<S> TlsStream<S> {
     pub fn get_ref(&self) -> &S {
-        // println!("TlsStream::get_ref");
-        self.buffer.get_ref()
+        &self.buffer
     }
 
     pub fn get_mut(&mut self) -> &mut S {
-        // panic!("TlsStream::get_mut");
-        // unsafe { &mut *(self.connection.as_mut() as *mut Connection::Connection as *mut S) }
-        self.buffer.get_mut()
+        &mut self.buffer
     }
 }
 
@@ -419,7 +468,7 @@ impl<S: io::Read + io::Write> TlsStream<S> {
     pub fn buffered_read_size(&self) -> Result<usize, Error> {
         // Peek how many bytes are in the buffer
         let size = unsafe { Connection::Pending(self.connection.as_ref()) };
-        panic!("TlsStream::buffered_read_size: Size pending: {:#x}", size);
+        // println!("TlsStream::buffered_read_size: Size pending: {:#x}", size);
         Ok(size)
     }
 
@@ -435,35 +484,29 @@ impl<S: io::Read + io::Write> TlsStream<S> {
     pub fn shutdown(&mut self) -> io::Result<()> {
         let result = unsafe { Connection::Destroy(self.connection.as_ref()) };
         // Should we take care of this for the user directly in the dependencies?
-        // unsafe { nnsdk::ssl::Finalize(); }
+        unsafe { nnsdk::ssl::Finalize(); }
         Ok(())
     }
 }
 
 impl<S: io::Read + io::Write> io::Read for TlsStream<S> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        // println!("Read: Buffer length: {:#x}", buf.len());
-        let result = unsafe { Connection::Read(self.connection.as_ref(), buf.as_mut_ptr(), buf.len()) };
-        // TODO: If result is < 0, we have an error, deal with that
-        if result == -1 {
-            panic!("TlsStream::read: Connection::Read returned the following result: {}", unsafe { Socket::GetLastError() })
-        }
-
-        Ok(result as _)
+        self.stream.read(buf)
     }
 }
 
 impl<S: io::Read + io::Write> io::Write for TlsStream<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        println!("Write: Buffer length: {:#x}", buf.len());
-        let result = unsafe { Connection::Write(self.connection.as_ref(), buf.as_ptr(), buf.len()) };
-        // TODO: If result is < 0, we have an error, deal with that
+        let mut write_count = 0;
+        let result = unsafe { Connection::Write1(self.connection.as_ref(), buf.as_ptr(), &mut write_count, buf.len()) };
 
         if result == -1 {
-            panic!("TlsStream::read: Connection::Read returned the following result: {}", unsafe { Socket::GetLastError() })
+            let mut result = 0;
+            unsafe { Connection::GetLastError(self.connection.as_ref(), &mut result) };
+            panic!("TlsStream::write: Connection::Write returned the following result: {}", result)
         }
 
-        Ok(result as _)
+        Ok(write_count as _)
     }
 
     fn flush(&mut self) -> io::Result<()> {
