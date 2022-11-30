@@ -71,6 +71,10 @@ mod Context {
         #[link_name = "\u{1}_ZN2nn3ssl7Context9ImportCrlEPmPKcj"]
         pub fn ImportCrl(this: *mut Context, out_store_id: &mut u64, crl_der_buf: *const u8, crl_der_buf_len: u32) -> i32;
     }
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl7Context7DestroyEv"]
+        pub fn Destroy(this: *mut Context);
+    }
 }
 
 // TODO: Move bindings in nnsdk-rs
@@ -422,6 +426,7 @@ impl io::Read for NnSslStream {
     }
 }
 
+// Unused
 impl io::Write for NnSslStream {
     fn write(&mut self, buf: &[u8]) -> std::result::Result<usize, std::io::Error> {
         let mut write_count = 0;
@@ -444,6 +449,7 @@ impl io::Write for NnSslStream {
 
 pub struct TlsStream<S> {
     connection: Box<Connection::Connection>,
+    // TODO: Add the context here. Boxed, eventually, so it takes less space, but whatever.
     stream: io::BufReader<NnSslStream>,
     buffer: S,
 }
@@ -483,6 +489,8 @@ impl<S: io::Read + io::Write> TlsStream<S> {
 
     pub fn shutdown(&mut self) -> io::Result<()> {
         let result = unsafe { Connection::Destroy(self.connection.as_ref()) };
+        // TODO: Delete the Context here, AFTER Connection::Destroy.
+        // let result = unsafe { Context::Destroy(self.context.as_ref()) };
         // Should we take care of this for the user directly in the dependencies?
         unsafe { nnsdk::ssl::Finalize(); }
         Ok(())
