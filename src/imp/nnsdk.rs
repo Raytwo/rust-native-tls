@@ -504,6 +504,15 @@ impl<S: io::Read + io::Write> io::Read for TlsStream<S> {
     }
 }
 
+impl<S> Drop for TlsStream<S> {
+    fn drop(&mut self) {
+        let connection_result = unsafe { Connection::Destroy(self.connection.as_ref()) };
+        let context_result = unsafe { Context::Destroy(self.context.as_ref()) };
+        // Should we take care of this for the user directly in the dependencies?
+        unsafe { nnsdk::ssl::Finalize(); }
+    }
+}
+
 impl<S: io::Read + io::Write> io::Write for TlsStream<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let mut write_count = 0;
