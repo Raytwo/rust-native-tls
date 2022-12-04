@@ -303,7 +303,7 @@ impl TlsConnector {
         let result = unsafe { Socket::Connect(tcp_socket, &sock_addr, 16) };
 
         if result == 0 {
-            println!("TlsConnector::connect: Successfully connected the socket")
+            // println!("TlsConnector::connect: Successfully connected the socket")
         } else {
             panic!("TlsConnector::connect: nn::socket::Connect returned the following result: {}", unsafe { Socket::GetLastError() })
         }
@@ -318,7 +318,7 @@ impl TlsConnector {
         let result = unsafe { Context::Create(context.as_mut(), Context::SslVersion::Auto) };
 
         if result == 0 {
-            println!("TlsConnector::connect: Successfully created the Context")
+            // println!("TlsConnector::connect: Successfully created the Context")
         } else {
             panic!("TlsConnector::connect: nn::ssl::Context::Create returned the following result: {}", result)
         }
@@ -334,7 +334,7 @@ impl TlsConnector {
         let result = unsafe { Connection::Create(connection.as_mut(), context.as_ref()) };
 
         if result == 0 {
-            println!("TlsConnector::connect: Successfully created the Connection");
+            // println!("TlsConnector::connect: Successfully created the Connection");
         } else {
             panic!("TlsConnector::connect: nn::ssl::Connection::Create returned the following result: {}", result)
         }
@@ -342,12 +342,12 @@ impl TlsConnector {
         // Assign the socket to the Connection. After doing so, you musn't use it again or even free it.
         let result = unsafe { Connection::SetSocketDescriptor(connection.as_mut(), tcp_socket as _) };
 
-        println!("TlsConnector::connect: Assigned the socket to the Connection: {}", result);
+        // println!("TlsConnector::connect: Assigned the socket to the Connection: {}", result);
 
         let result = unsafe { Connection::SetOption(connection.as_mut(), 2, true) };
 
         if result == 0 {
-            println!("TlsConnector::connect: Called SetOption successfully");
+            // println!("TlsConnector::connect: Called SetOption successfully");
         } else {
             panic!("TlsConnector::connect: nn::ssl::Connection::SetOption returned the following result: {}", result)
         }
@@ -355,7 +355,7 @@ impl TlsConnector {
         let result = unsafe { Connection::SetVerifyOption(connection.as_mut(), 0) };
 
         if result == 0 {
-            println!("TlsConnector::connect: Called SetVerifyOption successfully");
+            // println!("TlsConnector::connect: Called SetVerifyOption successfully");
         } else {
             panic!("TlsConnector::connect: nn::ssl::Connection::SetVerifyOption returned the following result: {}", result)
         }
@@ -365,7 +365,7 @@ impl TlsConnector {
         // let result = unsafe { Connection::SetHostName(connection.as_mut(), hostname.as_ptr() as _, hostname.len() as _) };
 
         // if result == 0 {
-        //     println!("TlsConnector::connect: Called SetHostName successfully");
+        //     // println!("TlsConnector::connect: Called SetHostName successfully");
         // } else {
         //     panic!("TlsConnector::connect: nn::ssl::Connection::SetHostName returned the following result: {}", result)
         // }
@@ -374,7 +374,7 @@ impl TlsConnector {
 
         match result {
             0 => {
-            println!("TlsConnector::connect: Connection successfully performed Handshake");
+            // println!("TlsConnector::connect: Connection successfully performed Handshake");
                 Ok(TlsStream {
                     connection: connection.clone(),
                     context: context.clone(),
@@ -476,7 +476,7 @@ impl<S: io::Read + io::Write> TlsStream<S> {
     pub fn buffered_read_size(&self) -> Result<usize, Error> {
         // Peek how many bytes are in the buffer
         let size = unsafe { Connection::Pending(self.connection.as_ref()) };
-        // println!("TlsStream::buffered_read_size: Size pending: {:#x}", size);
+        // // println!("TlsStream::buffered_read_size: Size pending: {:#x}", size);
         Ok(size)
     }
 
