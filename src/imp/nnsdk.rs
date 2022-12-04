@@ -42,6 +42,7 @@ mod Context {
 
     // Estimate through SDK binary usage of the fields
     #[repr(C)]
+    #[derive(Clone, Copy)]
     pub struct Context {
         _x: u64,
     }
@@ -73,7 +74,7 @@ mod Context {
     }
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl7Context7DestroyEv"]
-        pub fn Destroy(this: *mut Context);
+        pub fn Destroy(this: *const Context) -> u32;
     }
 }
 
@@ -376,6 +377,7 @@ impl TlsConnector {
             println!("TlsConnector::connect: Connection successfully performed Handshake");
                 Ok(TlsStream {
                     connection: connection.clone(),
+                    context: context.clone(),
                     stream: io::BufReader::with_capacity(0x50000, NnSslStream(connection)),
                     buffer: stream,
                 })
@@ -449,7 +451,7 @@ impl io::Write for NnSslStream {
 
 pub struct TlsStream<S> {
     connection: Box<Connection::Connection>,
-    // TODO: Add the context here. Boxed, eventually, so it takes less space, but whatever.
+    context: Box<Context::Context>,
     stream: io::BufReader<NnSslStream>,
     buffer: S,
 }
@@ -488,9 +490,8 @@ impl<S: io::Read + io::Write> TlsStream<S> {
     }
 
     pub fn shutdown(&mut self) -> io::Result<()> {
-        let result = unsafe { Connection::Destroy(self.connection.as_ref()) };
-        // TODO: Delete the Context here, AFTER Connection::Destroy.
-        // let result = unsafe { Context::Destroy(self.context.as_ref()) };
+        let connection_result = unsafe { Connection::Destroy(self.connection.as_ref()) };
+        let context_result = unsafe { Context::Destroy(self.context.as_ref()) };
         // Should we take care of this for the user directly in the dependencies?
         unsafe { nnsdk::ssl::Finalize(); }
         Ok(())
