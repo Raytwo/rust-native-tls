@@ -383,8 +383,12 @@ impl TlsConnector {
                 })
             }
             _ => {
-                panic!("TlsConnector::connect: Handshake failed with the following result: {}", result);   
-                Err(HandshakeError::Failure(Error(io::Error::new(io::ErrorKind::Other, "TlsConnector::connect: Handshake did not end successfully"))))
+                Err(HandshakeError::Failure(
+                    Error(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("TlsConnector::connect: Handshake failed with the following result: {result}")
+                    ))
+                ))
             }
         }
 
