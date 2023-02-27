@@ -279,7 +279,12 @@ impl TlsConnector {
         let tcp_socket = unsafe { nn::socket::Socket(libc::AF_INET, libc::SOCK_STREAM, 6) };
 
         if tcp_socket == -1 {
-            panic!("TlsConnector::connect: nn::socket::Socket returned the following result: {}", unsafe { Socket::GetLastError() })
+            return Err(HandshakeError::Failure(
+                    Error(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("TlsConnector::connect: nn::socket::Socket returned the following result: {}", unsafe { Socket::GetLastError() })
+                    ))
+                ));
         }
         
         // TODO: Connect the socket to the domain
@@ -301,11 +306,14 @@ impl TlsConnector {
 
         // TODO: Rework the one in nnsdk-rs
         let result = unsafe { Socket::Connect(tcp_socket, &sock_addr, 16) };
-
-        if result == 0 {
-            // println!("TlsConnector::connect: Successfully connected the socket")
-        } else {
-            panic!("TlsConnector::connect: nn::socket::Connect returned the following result: {}", unsafe { Socket::GetLastError() })
+        
+        if result != 0 {
+            return Err(HandshakeError::Failure(
+                    Error(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("TlsConnector::connect: nn::socket::Connect returned the following result: {result}")
+                    ))
+                ));
         }
 
         //-----------------------------------------------
@@ -316,11 +324,14 @@ impl TlsConnector {
         // Initialize the class before doing anything
         unsafe { Context::Context(context.as_mut()) };
         let result = unsafe { Context::Create(context.as_mut(), Context::SslVersion::Auto) };
-
-        if result == 0 {
-            // println!("TlsConnector::connect: Successfully created the Context")
-        } else {
-            panic!("TlsConnector::connect: nn::ssl::Context::Create returned the following result: {}", result)
+        
+        if result != 0 {
+            return Err(HandshakeError::Failure(
+                    Error(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("TlsConnector::connect: nn::ssl::Context::Create returned the following result: {result}")
+                    ))
+                ));
         }
 
         //-----------------------------------------------
@@ -332,11 +343,14 @@ impl TlsConnector {
 
         // TODO: Create the connection by providing it the context
         let result = unsafe { Connection::Create(connection.as_mut(), context.as_ref()) };
-
-        if result == 0 {
-            // println!("TlsConnector::connect: Successfully created the Connection");
-        } else {
-            panic!("TlsConnector::connect: nn::ssl::Connection::Create returned the following result: {}", result)
+        
+        if result != 0 {
+            return Err(HandshakeError::Failure(
+                    Error(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("TlsConnector::connect: nn::ssl::Connection::Create returned the following result: {result}")
+                    ))
+                ));
         }
 
         // Assign the socket to the Connection. After doing so, you musn't use it again or even free it.
@@ -345,30 +359,26 @@ impl TlsConnector {
         // println!("TlsConnector::connect: Assigned the socket to the Connection: {}", result);
 
         let result = unsafe { Connection::SetOption(connection.as_mut(), 2, true) };
-
-        if result == 0 {
-            // println!("TlsConnector::connect: Called SetOption successfully");
-        } else {
-            panic!("TlsConnector::connect: nn::ssl::Connection::SetOption returned the following result: {}", result)
+        
+        if result != 0 {
+            return Err(HandshakeError::Failure(
+                    Error(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("TlsConnector::connect: nn::ssl::Connection::SetOption returned the following result: {result}")
+                    ))
+                ));
         }
 
         let result = unsafe { Connection::SetVerifyOption(connection.as_mut(), 0) };
-
-        if result == 0 {
-            // println!("TlsConnector::connect: Called SetVerifyOption successfully");
-        } else {
-            panic!("TlsConnector::connect: nn::ssl::Connection::SetVerifyOption returned the following result: {}", result)
+        
+        if result != 0 {
+            return Err(HandshakeError::Failure(
+                    Error(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("TlsConnector::connect: nn::ssl::Connection::SetVerifyOption returned the following result: {result}")
+                    ))
+                ));
         }
-
-        // const hostname: &[u8] = b"nintendo.com";
-
-        // let result = unsafe { Connection::SetHostName(connection.as_mut(), hostname.as_ptr() as _, hostname.len() as _) };
-
-        // if result == 0 {
-        //     // println!("TlsConnector::connect: Called SetHostName successfully");
-        // } else {
-        //     panic!("TlsConnector::connect: nn::ssl::Connection::SetHostName returned the following result: {}", result)
-        // }
 
         let result = unsafe { Connection::DoHandshake(connection.as_mut()) };
 
