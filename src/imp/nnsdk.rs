@@ -67,6 +67,12 @@ mod Context {
         #[link_name = "\u{1}_ZN2nn3ssl7Context15ImportClientPkiEPmPKcS4_jj"]
         pub fn ImportClientPki(this: *mut Context, out_store_id: &mut u64, p12_buf: *const u8, password_buf: *const u8, p12_buf_len: u32, password_buf_len: u32) -> i32;
     }
+
+    // Ryujinx does not implement this...
+    extern "C" {
+        #[link_name = "\u{1}_ZN2nn3ssl7Context19RegisterInternalPkiEPmNS1_11InternalPkiE"]
+        pub fn RegisterInternalPki(this: *mut Context, out_store_id: &mut u64, kind: i32) -> i32;
+    }
     
     extern "C" {
         #[link_name = "\u{1}_ZN2nn3ssl7Context9ImportCrlEPmPKcj"]
@@ -76,6 +82,16 @@ mod Context {
         #[link_name = "\u{1}_ZN2nn3ssl7Context7DestroyEv"]
         pub fn Destroy(this: *const Context) -> u32;
     }
+}
+
+extern "C" {
+    #[link_name = "\u{1}_ZN2nn3ssl14BuiltInManager28GetBuiltInCertificateBufSizeEPjPNS0_15CaCertificateIdEj"]
+    pub fn GetBuiltInCertificateBufSize(out_buf_size: &mut usize, cert_ids: &u32, id_count: usize) -> u32;
+}
+
+extern "C" {
+    #[link_name = "\u{1}_ZN2nn3ssl14BuiltInManager22GetBuiltInCertificatesEPPNS1_22BuiltInCertificateInfoEPhjPNS0_15CaCertificateIdEj"]
+    pub fn GetBuiltInCertificates(out_info: &mut u32, out_buffer: &mut u8, buf_size: usize, cert_ids: &u32, id_count: usize) -> u32;
 }
 
 // TODO: Move bindings in nnsdk-rs
@@ -349,6 +365,19 @@ impl TlsConnector {
                     Error(io::Error::new(
                         io::ErrorKind::Other,
                         format!("TlsConnector::connect: nn::ssl::Connection::Create returned the following result: {result}")
+                    ))
+                ));
+        }
+
+        let host_name = std::ffi::CString::new(domain).unwrap();
+        let host_name = host_name.as_bytes_with_nul();
+        let result = unsafe { Connection::SetHostName(connection.as_mut(), host_name.as_ptr(), host_name.len() as _) };
+
+        if result != 0 {
+            return Err(HandshakeError::Failure(
+                    Error(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("TlsConnector::connect: nn::ssl::Connection::SetHostName returned the following result: {result}")
                     ))
                 ));
         }
