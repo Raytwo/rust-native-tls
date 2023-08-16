@@ -458,16 +458,18 @@ pub struct NnSslStream(Box<Connection::Connection>);
 
 impl io::Read for NnSslStream {
     fn read(&mut self, buf: &mut [u8]) -> std::result::Result<usize, std::io::Error> {
-        let mut read_count = 0;
-        let result = unsafe { Connection::Read1(self.0.as_ref(), buf.as_mut_ptr(), &mut read_count, buf.len() as _) };
+        let result = unsafe { Connection::Read(self.0.as_ref(), buf.as_mut_ptr(), buf.len() as _) };
+
         // TODO: If result is < 0, we have an error, deal with that
-        if result == -1 {
-            let mut result = 0;
-            unsafe { Connection::GetLastError(self.0.as_ref(), &mut result) };
-            panic!("TlsStream::read: Connection::Read returned the following result: {}", result)
+        if result < 0 {
+            let mut error = 0;
+
+            unsafe { Connection::GetLastError(self.0.as_ref(), &mut error) };
+            
+            panic!("TlsStream::read: Connection::Read returned the following result: {:x}", error)
         }
 
-        Ok(read_count as _)
+        Ok(result as _)
     }
 }
 
