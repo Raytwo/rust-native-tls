@@ -466,7 +466,7 @@ impl io::Read for NnSslStream {
             unsafe { Connection::GetLastError(self.0.as_ref(), &mut error) };
             
             if error == 0x1987B {
-                return Err(io::Error::new(io::ErrorKind::Interrupted));
+                return Err(io::Error::from(io::ErrorKind::Interrupted));
             } else {
                 return Err(io::Error::new(
                     io::ErrorKind::Other,
