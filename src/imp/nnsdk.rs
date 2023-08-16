@@ -460,13 +460,19 @@ impl io::Read for NnSslStream {
     fn read(&mut self, buf: &mut [u8]) -> std::result::Result<usize, std::io::Error> {
         let result = unsafe { Connection::Read(self.0.as_ref(), buf.as_mut_ptr(), buf.len() as _) };
 
-        // TODO: If result is < 0, we have an error, deal with that
         if result < 0 {
             let mut error = 0;
 
             unsafe { Connection::GetLastError(self.0.as_ref(), &mut error) };
             
-            panic!("TlsStream::read: Connection::Read returned the following result: {:x}", error)
+            if error == 0x1987B {
+                return Err(io::Error::new(io::ErrorKind::Interrupted));
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("NnSslStream::Read returned the following result: {error}")
+                ));
+            }
         }
 
         Ok(result as _)
